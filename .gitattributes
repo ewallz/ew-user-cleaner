@@ -1,0 +1,12 @@
+# Files excluded from `git archive` output, so they never reach the
+# distributable plugin zip. These are repository furniture, not runtime files.
+#
+# LICENSE and readme.txt are deliberately NOT excluded: the former for GPL
+# compliance, the latter because WordPress reads it as plugin metadata.
+/.gitignore     export-ignore
+/.gitattributes export-ignore
+/.github        export-ignore
+/README.md      export-ignore
+/plan.md        export-ignore
+/prd.md         export-ignore
+/tasks.md       export-ignore

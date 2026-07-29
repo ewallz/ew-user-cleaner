@@ -1,0 +1,165 @@
+name: Release
+
+# Builds a WordPress-installable zip and publishes it as a GitHub Release
+# asset whenever a version tag is pushed.
+#
+# Release procedure:
+#   1. Bump the version in ew-user-cleaner.php (header + EWUC_VERSION) and
+#      readme.txt (Stable tag). All three must agree or this workflow fails.
+#   2. Add a readme.txt changelog entry, then commit.
+#   3. git tag v1.3.0 && git push --follow-tags
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  release:
+    name: Build and publish plugin zip
+    runs-on: ubuntu-latest
+
+    # Required to create a Release and upload assets. Scoped to this job only.
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out the tagged commit
+        uses: actions/checkout@v4
+        with:
+          # git archive needs the full repository, not a shallow clone.
+          fetch-depth: 0
+
+      - name: Derive and validate the version from the tag
+        id: version
+        run: |
+          set -euo pipefail
+
+          TAG="${GITHUB_REF_NAME}"
+          VERSION="${TAG#v}"
+
+          # Reject anything that is not v<major>.<minor>.<patch> with an
+          # optional suffix, so a stray tag cannot start a release.
+          if ! printf '%s' "${VERSION}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([.-][0-9A-Za-z.-]+)?$'; then
+            echo "::error::Tag '${TAG}' is not a valid version tag. Expected v<major>.<minor>.<patch>, for example v1.3.0."
+            exit 1
+          fi
+
+          echo "version=${VERSION}" >> "${GITHUB_OUTPUT}"
+          echo "Releasing version ${VERSION} from tag ${TAG}."
+
+      - name: Verify the plugin files declare the same version
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # tr -d '\r' guards against CRLF line endings reaching the runner.
+          HEADER=$(grep -m1 -E '^\s*\*\s*Version:' ew-user-cleaner.php \
+            | sed -E 's/^\s*\*\s*Version:\s*//' | tr -d '\r' | xargs)
+          CONSTANT=$(grep -m1 -E "define\(\s*'EWUC_VERSION'" ew-user-cleaner.php \
+            | sed -E "s/.*'EWUC_VERSION'\s*,\s*'([^']*)'.*/\1/" | tr -d '\r' | xargs)
+          STABLE=$(grep -m1 -E '^Stable tag:' readme.txt \
+            | sed -E 's/^Stable tag:\s*//' | tr -d '\r' | xargs)
+
+          echo "tag version:            ${VERSION}"
+          echo "plugin header Version:  ${HEADER}"
+          echo "EWUC_VERSION constant:  ${CONSTANT}"
+          echo "readme.txt Stable tag:  ${STABLE}"
+
+          STATUS=0
+          [ "${HEADER}" = "${VERSION}" ]   || { echo "::error file=ew-user-cleaner.php::Plugin header Version is '${HEADER}' but the tag is '${VERSION}'."; STATUS=1; }
+          [ "${CONSTANT}" = "${VERSION}" ] || { echo "::error file=ew-user-cleaner.php::EWUC_VERSION is '${CONSTANT}' but the tag is '${VERSION}'."; STATUS=1; }
+          [ "${STABLE}" = "${VERSION}" ]   || { echo "::error file=readme.txt::Stable tag is '${STABLE}' but the tag is '${VERSION}'."; STATUS=1; }
+
+          if [ "${STATUS}" -ne 0 ]; then
+            echo "::error::Version mismatch. Nothing has been published. Fix the versions, delete the tag, and re-tag."
+            exit 1
+          fi
+
+          echo "All declared versions match the tag."
+
+      - name: Build the plugin zip
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          # --prefix is mandatory: WordPress requires a single top-level
+          # folder inside the zip, otherwise the plugin installs incorrectly.
+          # Archiving the tag ref guarantees the asset matches what was tagged
+          # rather than anything left in the working tree.
+          git archive \
+            --format=zip \
+            --prefix="ew-user-cleaner/" \
+            -o "ew-user-cleaner-${VERSION}.zip" \
+            "${GITHUB_REF_NAME}"
+
+          ls -lh "ew-user-cleaner-${VERSION}.zip"
+
+      - name: Verify the archive structure
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          ZIP="ew-user-cleaner-${VERSION}.zip"
+          CONTENTS=$(unzip -Z1 "${ZIP}")
+
+          echo "${CONTENTS}"
+
+          STATUS=0
+
+          # The plugin bootstrap must sit inside the single top-level folder.
+          printf '%s\n' "${CONTENTS}" | grep -qx 'ew-user-cleaner/ew-user-cleaner.php' \
+            || { echo "::error::Archive is missing ew-user-cleaner/ew-user-cleaner.php. The top-level folder is wrong and this zip would not install."; STATUS=1; }
+
+          # export-ignore must have stripped repository furniture. If these
+          # appear, .gitattributes was missing from the tagged commit.
+          for UNWANTED in \
+            'ew-user-cleaner/.gitignore' \
+            'ew-user-cleaner/.gitattributes' \
+            'ew-user-cleaner/README.md'
+          do
+            if printf '%s\n' "${CONTENTS}" | grep -qx "${UNWANTED}"; then
+              echo "::error::${UNWANTED} should have been excluded by .gitattributes export-ignore."
+              STATUS=1
+            fi
+          done
+
+          if printf '%s\n' "${CONTENTS}" | grep -q '^ew-user-cleaner/\.github/'; then
+            echo "::error::.github/ should have been excluded by .gitattributes export-ignore."
+            STATUS=1
+          fi
+
+          # Files that must ship.
+          for REQUIRED in \
+            'ew-user-cleaner/uninstall.php' \
+            'ew-user-cleaner/LICENSE' \
+            'ew-user-cleaner/readme.txt'
+          do
+            printf '%s\n' "${CONTENTS}" | grep -qx "${REQUIRED}" \
+              || { echo "::error::Archive is missing ${REQUIRED}."; STATUS=1; }
+          done
+
+          if [ "${STATUS}" -ne 0 ]; then
+            echo "::error::Archive verification failed. Nothing has been published."
+            exit 1
+          fi
+
+          echo "Archive structure verified."
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          gh release create "${GITHUB_REF_NAME}" \
+            "ew-user-cleaner-${VERSION}.zip" \
+            --title "EW User Cleaner ${VERSION}" \
+            --generate-notes
