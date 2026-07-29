@@ -51,6 +51,7 @@ class EWUC_Plugin {
 
 		if ( is_admin() ) {
 			EWUC_Admin::hooks();
+			EWUC_Update_Checker::hooks();
 		}
 	}
 }

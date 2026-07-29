@@ -16,6 +16,9 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 require_once __DIR__ . '/includes/functions.php';
 require_once __DIR__ . '/includes/class-ewuc-installer.php';
 
+// Release metadata is disposable cache, not retained plugin data.
+delete_site_transient( 'ewuc_github_release' );
+
 $ewuc_settings = get_option( 'ewuc_settings', array() );
 
 if ( ! is_array( $ewuc_settings ) || empty( $ewuc_settings['remove_data_on_uninstall'] ) ) {

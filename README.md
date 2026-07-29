@@ -189,6 +189,8 @@ Uninstalling keeps your data unless you tick **Delete all plugin data when the p
 
 **A UI button does nothing after an update.** Hard-refresh with `Ctrl`+`F5`. If you use a caching or asset-minification plugin, clear its cache too.
 
+**How are new versions delivered?** When an administrator opens **Plugins → Installed Plugins**, EW User Cleaner checks GitHub at most once every 12 hours. If a newer stable release exists, a notice links to its GitHub Release page for manual download. The plugin never enables one-click or automatic updates.
+
 ---
 
 ## Releasing
