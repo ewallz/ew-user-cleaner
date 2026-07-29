@@ -6,7 +6,6 @@
 /.gitignore     export-ignore
 /.gitattributes export-ignore
 /.github        export-ignore
-/bin            export-ignore
 /README.md      export-ignore
 /plan.md        export-ignore
 /prd.md         export-ignore
