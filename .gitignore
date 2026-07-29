@@ -1,0 +1,68 @@
+# --- Planning and internal docs (not for distribution) ---
+plan.md
+prd.md
+tasks.md
+notes.md
+todo.md
+TODO.md
+CHANGELOG.draft.md
+*.plan.md
+*.draft.md
+docs/internal/
+
+# --- Dependencies ---
+node_modules/
+vendor/
+composer.lock
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# --- Build output ---
+build/
+dist/
+*.min.js.map
+*.min.css.map
+
+# --- Environment and secrets ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+auth.json
+
+# --- Local dev tooling ---
+.phpunit.result.cache
+.phpcs-cache
+phpcs.xml
+phpunit.xml
+.php-cs-fixer.cache
+
+# --- Editors and IDEs ---
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.code-workspace
+
+# --- OS cruft ---
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# --- Logs, dumps and temp files ---
+*.log
+debug.log
+error_log
+*.sql
+*.sql.gz
+*.bak
+*.tmp
+*~
+
+# --- Release archives ---
+*.zip
+*.tar.gz
