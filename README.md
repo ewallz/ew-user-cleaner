@@ -191,6 +191,35 @@ Uninstalling keeps your data unless you tick **Delete all plugin data when the p
 
 ---
 
+## Releasing
+
+The version is declared in three places, and the release workflow refuses to publish unless all three match the git tag. `bin/bump-version.ps1` updates them together so they cannot drift:
+
+```powershell
+.\bin\bump-version.ps1 1.3.0            # apply the bump
+.\bin\bump-version.ps1 1.3.0 -DryRun    # preview without writing
+```
+
+It rewrites the `Version` header and the `EWUC_VERSION` constant in `ew-user-cleaner.php`, the `Stable tag` in `readme.txt`, and inserts a changelog stub. It deliberately does not commit, tag or push.
+
+It refuses to run if the version is malformed, lower than the current one, already declared everywhere, or if the matching tag already exists.
+
+Then:
+
+```powershell
+# edit the changelog entry in readme.txt, review with git diff
+git add -A
+git commit -m "Release 1.3.0"
+git tag v1.3.0
+git push --follow-tags
+```
+
+Pushing the tag triggers `.github/workflows/release.yml`, which verifies the versions, builds `ew-user-cleaner-<version>.zip`, checks the archive structure, and publishes a GitHub Release with the zip attached. A version mismatch fails the run before anything is published.
+
+Files marked `export-ignore` in `.gitattributes` (this README, `bin/`, `.github/`, dotfiles) are excluded from the zip, so the release contains only what WordPress needs.
+
+---
+
 ## Support
 
 Built and maintained by **eWallz Solutions**, WordPress customization experts.
