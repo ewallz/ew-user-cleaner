@@ -4,7 +4,7 @@ Tags: spam users, spam registrations, user cleanup, delete users, bulk delete us
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.0
-Stable tag: 1.3.0
+Stable tag: 1.3.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -143,6 +143,9 @@ They are heuristics based on local identity data, not a reputation service. That
 5. Quarantine tab with restore and purge actions.
 
 == Changelog ==
+
+= 1.3.1 =
+* Changed: Patch release for validating manual GitHub update notifications from version 1.3.0.
 
 = 1.3.0 =
 * Added: Manual GitHub release checks on the Installed Plugins page. New versions link to GitHub for manual download; no one-click or automatic updater is enabled.
