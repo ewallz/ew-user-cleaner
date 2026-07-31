@@ -302,37 +302,104 @@ class EWUC_Quarantine {
 	}
 
 	/**
-	 * Lists quarantined users.
+	 * Sort keys mapped to indexed SQL fragments.
 	 *
-	 * @param int $page     Page number.
-	 * @param int $per_page Page size.
+	 * @return array<string, string>
+	 */
+	public static function orderby_map(): array {
+		return array(
+			'quarantined' => 'q.quarantined_at',
+			'user_id'     => 'q.user_id',
+			'login'       => 'u.user_login',
+			'email'       => 'u.user_email',
+		);
+	}
+
+	/**
+	 * Builds the shared WHERE clause for quarantine list filters.
+	 *
+	 * Every read path uses this so the filtered list and its count can never
+	 * disagree.
+	 *
+	 * @param array $args Query arguments.
+	 * @return array{clause: string, params: array<int, mixed>}
+	 */
+	private static function build_where( array $args ): array {
+		global $wpdb;
+
+		$where  = array( "q.status = 'active'" );
+		$params = array();
+
+		if ( ! empty( $args['search'] ) ) {
+			$search = ewuc_normalize( (string) $args['search'] );
+
+			if ( is_numeric( $search ) ) {
+				$where[]  = 'q.user_id = %d';
+				$params[] = absint( $search );
+			} else {
+				// Prefix search only; leading wildcards cannot use an index.
+				$where[]  = '( u.user_login LIKE %s OR u.user_email LIKE %s OR u.display_name LIKE %s )';
+				$like     = $wpdb->esc_like( $search ) . '%';
+				$params[] = $like;
+				$params[] = $like;
+				$params[] = $like;
+			}
+		}
+
+		if ( ! empty( $args['domain'] ) ) {
+			$domain   = ewuc_normalize( ltrim( (string) $args['domain'], '@.' ) );
+			$where[]  = 'u.user_email LIKE %s';
+			$params[] = '%@' . $wpdb->esc_like( $domain );
+		}
+
+		return array(
+			'clause' => implode( ' AND ', $where ),
+			'params' => $params,
+		);
+	}
+
+	/**
+	 * Lists quarantined users with bounded pagination and filters.
+	 *
+	 * @param array $args Query arguments: page, per_page, orderby, order, search, domain.
 	 * @return array{items: array<int, array<string, mixed>>, total: int}
 	 */
-	public static function query( int $page = 1, int $per_page = 50 ): array {
+	public static function query( array $args = array() ): array {
 		global $wpdb;
 
 		$table    = ewuc_table( 'quarantine' );
-		$per_page = ewuc_clamp_int( $per_page, 20, 100, 50 );
-		$page     = ewuc_clamp_int( $page, 1, 100000, 1 );
+		$per_page = ewuc_clamp_int( $args['per_page'] ?? 50, 20, 100, 50 );
+		$page     = ewuc_clamp_int( $args['page'] ?? 1, 1, 100000, 1 );
+		$orderby  = self::orderby_map()[ $args['orderby'] ?? 'quarantined' ] ?? 'q.quarantined_at';
+		$order    = 'asc' === strtolower( (string) ( $args['order'] ?? 'desc' ) ) ? 'ASC' : 'DESC';
 		$offset   = ( $page - 1 ) * $per_page;
 
-		// phpcs:disable WordPress.DB.DirectDatabaseQuery
-		$total = (int) $wpdb->get_var( "SELECT COUNT(*) FROM {$table} WHERE status = 'active'" );
+		$filter = self::build_where( $args );
+		$clause = $filter['clause'];
+		$params = $filter['params'];
+
+		// phpcs:disable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL
+		$count_sql = "SELECT COUNT(*) FROM {$table} AS q
+			 INNER JOIN {$wpdb->users} AS u ON u.ID = q.user_id
+			 WHERE {$clause}";
+
+		$total = (int) ( $params
+			? $wpdb->get_var( $wpdb->prepare( $count_sql, ...$params ) )
+			: $wpdb->get_var( $count_sql ) );
 
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
 				"SELECT q.user_id, q.job_id, q.quarantined_at, q.quarantined_by, u.user_login, u.user_email
 				 FROM {$table} AS q
 				 INNER JOIN {$wpdb->users} AS u ON u.ID = q.user_id
-				 WHERE q.status = 'active'
-				 ORDER BY q.quarantined_at DESC, q.user_id ASC
+				 WHERE {$clause}
+				 ORDER BY {$orderby} {$order}, q.user_id ASC
 				 LIMIT %d OFFSET %d",
-				$per_page,
-				$offset
+				...array_merge( $params, array( $per_page, $offset ) )
 			),
 			ARRAY_A
 		);
-		// phpcs:enable WordPress.DB.DirectDatabaseQuery
+		// phpcs:enable WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQL
 
 		return array(
 			'items' => is_array( $rows ) ? $rows : array(),

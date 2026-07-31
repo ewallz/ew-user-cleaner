@@ -13,14 +13,23 @@ defined( 'ABSPATH' ) || exit;
 
 $ewuc_job_id = $job ? (int) $job['id'] : 0;
 
+/*
+ * The candidate list is always the awaiting-review queue. A status filter was
+ * removed on purpose: this table is a snapshot of one scan, so it cannot
+ * represent current account status. Purged accounts no longer exist and
+ * quarantined ones are managed on the Quarantine tab.
+ */
+$ewuc_state = 'candidate';
+
 // phpcs:disable WordPress.Security.NonceVerification.Recommended
-$ewuc_state   = isset( $_GET['state'] ) ? sanitize_key( (string) $_GET['state'] ) : 'candidate';
 $ewuc_order   = isset( $_GET['orderby'] ) ? sanitize_key( (string) $_GET['orderby'] ) : 'score';
 $ewuc_dir     = isset( $_GET['order'] ) && 'asc' === $_GET['order'] ? 'asc' : 'desc';
 $ewuc_page    = isset( $_GET['paged'] ) ? absint( $_GET['paged'] ) : 1;
 $ewuc_search  = isset( $_GET['s'] ) ? sanitize_text_field( (string) $_GET['s'] ) : '';
 $ewuc_perpage = isset( $_GET['per_page'] ) ? absint( $_GET['per_page'] ) : 50;
 // phpcs:enable WordPress.Security.NonceVerification.Recommended
+
+$ewuc_per_page = ewuc_clamp_int( $ewuc_perpage, 20, 100, 50 );
 
 $ewuc_result = EWUC_Candidates::query(
 	array(
@@ -29,15 +38,14 @@ $ewuc_result = EWUC_Candidates::query(
 		'orderby'  => $ewuc_order,
 		'order'    => $ewuc_dir,
 		'page'     => $ewuc_page,
-		'per_page' => $ewuc_perpage,
+		'per_page' => $ewuc_per_page,
 		'search'   => $ewuc_search,
 	)
 );
 
-$ewuc_total    = (int) $ewuc_result['total'];
-$ewuc_per_page = ewuc_clamp_int( $ewuc_perpage, 20, 100, 50 );
-$ewuc_pages    = (int) ceil( $ewuc_total / $ewuc_per_page );
-$ewuc_labels   = array(
+$ewuc_total  = (int) $ewuc_result['total'];
+$ewuc_pages  = (int) ceil( $ewuc_total / $ewuc_per_page );
+$ewuc_labels = array(
 	'current_user'    => __( 'Signed in admin', 'ew-user-cleaner' ),
 	'user_one'        => __( 'Site owner', 'ew-user-cleaner' ),
 	'protected_role'  => __( 'Protected role', 'ew-user-cleaner' ),
@@ -55,15 +63,6 @@ $ewuc_labels   = array(
 <form method="get" class="ewuc-filters">
 	<input type="hidden" name="page" value="<?php echo esc_attr( EWUC_Admin::SLUG ); ?>" />
 	<input type="hidden" name="tab" value="candidates" />
-
-	<label for="ewuc-state" class="screen-reader-text"><?php esc_html_e( 'State', 'ew-user-cleaner' ); ?></label>
-	<select id="ewuc-state" name="state">
-		<?php foreach ( EWUC_Candidates::states() as $ewuc_option ) : ?>
-			<option value="<?php echo esc_attr( $ewuc_option ); ?>" <?php selected( $ewuc_state, $ewuc_option ); ?>>
-				<?php echo esc_html( $ewuc_option ); ?>
-			</option>
-		<?php endforeach; ?>
-	</select>
 
 	<label for="ewuc-orderby" class="screen-reader-text"><?php esc_html_e( 'Sort by', 'ew-user-cleaner' ); ?></label>
 	<select id="ewuc-orderby" name="orderby">
@@ -91,11 +90,32 @@ $ewuc_labels   = array(
 		<option value="asc" <?php selected( $ewuc_dir, 'asc' ); ?>><?php esc_html_e( 'Ascending', 'ew-user-cleaner' ); ?></option>
 	</select>
 
+	<label for="ewuc-perpage" class="screen-reader-text"><?php esc_html_e( 'Rows per page', 'ew-user-cleaner' ); ?></label>
+	<select id="ewuc-perpage" name="per_page">
+		<?php foreach ( array( 20, 50, 100 ) as $ewuc_size ) : ?>
+			<option value="<?php echo esc_attr( (string) $ewuc_size ); ?>" <?php selected( $ewuc_per_page, $ewuc_size ); ?>>
+				<?php
+				printf(
+					/* translators: %s: rows per page. */
+					esc_html__( '%s per page', 'ew-user-cleaner' ),
+					esc_html( number_format_i18n( $ewuc_size ) )
+				);
+				?>
+			</option>
+		<?php endforeach; ?>
+	</select>
+
 	<label for="ewuc-search" class="screen-reader-text"><?php esc_html_e( 'Search', 'ew-user-cleaner' ); ?></label>
 	<input type="search" id="ewuc-search" name="s" value="<?php echo esc_attr( $ewuc_search ); ?>"
 		placeholder="<?php esc_attr_e( 'User ID or name prefix', 'ew-user-cleaner' ); ?>" />
 
 	<button type="submit" class="button"><?php esc_html_e( 'Filter', 'ew-user-cleaner' ); ?></button>
+
+	<?php if ( '' !== $ewuc_search ) : ?>
+		<a class="button" href="<?php echo esc_url( add_query_arg( array( 'tab' => 'candidates' ), $base_url ) ); ?>">
+			<?php esc_html_e( 'Clear search', 'ew-user-cleaner' ); ?>
+		</a>
+	<?php endif; ?>
 
 	<a class="button" href="<?php echo esc_url( wp_nonce_url( add_query_arg( array( 'ewuc_export' => 1, 'job_id' => $ewuc_job_id, 'state' => $ewuc_state ), $base_url ), 'ewuc_export' ) ); ?>">
 		<?php esc_html_e( 'Export CSV', 'ew-user-cleaner' ); ?>
@@ -106,7 +126,7 @@ $ewuc_labels   = array(
 	<?php
 	printf(
 		/* translators: %s: candidate count. */
-		esc_html__( '%s matching rows. Search matches user IDs or name prefixes so large sites stay fast.', 'ew-user-cleaner' ),
+		esc_html__( '%s rows awaiting review. This list is a snapshot of the last scan, so it only shows accounts still awaiting a decision. Search matches user IDs or name prefixes so large sites stay fast.', 'ew-user-cleaner' ),
 		esc_html( number_format_i18n( $ewuc_total ) )
 	);
 	?>
@@ -122,7 +142,7 @@ $ewuc_labels   = array(
 		<button type="button" class="button" data-ewuc-dismiss><?php esc_html_e( 'Mark as legitimate', 'ew-user-cleaner' ); ?></button>
 
 		<?php
-		if ( current_user_can( 'ewuc_quarantine_users' ) && ewuc_destructive_allowed() && 'candidate' === $ewuc_state ) :
+		if ( current_user_can( 'ewuc_quarantine_users' ) && ewuc_destructive_allowed() ) :
 			$ewuc_pending = EWUC_Candidates::count_matching(
 				array(
 					'job_id' => $ewuc_job_id,
@@ -169,6 +189,17 @@ $ewuc_labels   = array(
 		</span>
 	</div>
 
+	<div class="ewuc-jobprogress" data-ewuc-progress="quarantine" hidden>
+		<div class="ewuc-progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"
+			aria-label="<?php esc_attr_e( 'Quarantine progress', 'ew-user-cleaner' ); ?>">
+			<span data-ewuc-progress-bar></span>
+		</div>
+		<p class="ewuc-progress-label">
+			<strong data-ewuc-progress-percent>0%</strong>
+			<span class="ewuc-note" data-ewuc-progress-text></span>
+		</p>
+	</div>
+
 	<div class="ewuc-tablewrap">
 		<table class="wp-list-table widefat striped ewuc-table">
 			<caption class="screen-reader-text"><?php esc_html_e( 'Spam candidates', 'ew-user-cleaner' ); ?></caption>
@@ -183,7 +214,7 @@ $ewuc_labels   = array(
 					<th scope="col"><?php esc_html_e( 'Registered', 'ew-user-cleaner' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Score', 'ew-user-cleaner' ); ?></th>
 					<th scope="col"><?php esc_html_e( 'Why it matched', 'ew-user-cleaner' ); ?></th>
-					<th scope="col"><?php esc_html_e( 'Status', 'ew-user-cleaner' ); ?></th>
+					<th scope="col"><?php esc_html_e( 'Protection', 'ew-user-cleaner' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
@@ -212,11 +243,12 @@ $ewuc_labels   = array(
 							</ul>
 						</td>
 						<td>
-							<span class="ewuc-pill"><?php echo esc_html( (string) $ewuc_row['state'] ); ?></span>
 							<?php if ( ! empty( $ewuc_row['protected_code'] ) ) : ?>
 								<span class="ewuc-pill ewuc-pill-warn">
 									<?php echo esc_html( $ewuc_labels[ (string) $ewuc_row['protected_code'] ] ?? (string) $ewuc_row['protected_code'] ); ?>
 								</span>
+							<?php else : ?>
+								<span class="ewuc-muted">—</span>
 							<?php endif; ?>
 						</td>
 					</tr>

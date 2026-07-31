@@ -99,6 +99,7 @@ class EWUC_Admin {
 				'jobStatus'       => $latest ? (string) $latest['status'] : '',
 				'canScan'         => current_user_can( 'ewuc_scan_users' ),
 				'batchQuarantine' => (int) EWUC_Settings::get()['batch_quarantine'],
+				'batchPurge'      => (int) EWUC_Settings::get()['batch_purge'],
 				'i18n'            => array(
 					'scanning'  => __( 'Scanning…', 'ew-user-cleaner' ),
 					'paused'    => __( 'Paused. Progress is saved.', 'ew-user-cleaner' ),
@@ -118,8 +119,17 @@ class EWUC_Admin {
 					/* translators: %1$s: purged, %2$s: skipped, %3$s: failed, %4$s: remaining. */
 					'purgeAllProgress'   => __( 'Purged %1$s, skipped %2$s, failed %3$s. %4$s still quarantined.', 'ew-user-cleaner' ),
 					'nothingQuarantined' => __( 'Nothing is quarantined.', 'ew-user-cleaner' ),
-					/* translators: %1$s: selected rows, %2$s: batch size. */
-					'batchTruncated'     => __( 'You selected %1$s rows, but only the first %2$s will be quarantined in one request. Raise the quarantine batch size in Settings, or continue and repeat. Continue?', 'ew-user-cleaner' ),
+					/* translators: %1$s: rows processed, %2$s: total rows. */
+					'progressCount'      => __( '%1$s of %2$s processed', 'ew-user-cleaner' ),
+					'progressStarting'   => __( 'Starting…', 'ew-user-cleaner' ),
+					'progressDone'       => __( 'Finished. Reloading the list…', 'ew-user-cleaner' ),
+					'progressStopped'    => __( 'Stopped before finishing.', 'ew-user-cleaner' ),
+					'quarantineWorking'  => __( 'Quarantining…', 'ew-user-cleaner' ),
+					'purgeWorking'       => __( 'Purging…', 'ew-user-cleaner' ),
+					/* translators: %1$s: quarantined, %2$s: skipped. */
+					'quarantineProgress' => __( 'Quarantined %1$s, skipped %2$s.', 'ew-user-cleaner' ),
+					/* translators: %1$s: purged, %2$s: skipped, %3$s: failed. */
+					'purgeProgress'      => __( 'Purged %1$s, skipped %2$s, failed %3$s.', 'ew-user-cleaner' ),
 					/* translators: %s: number of matching accounts. This exact phrase must be typed to confirm. */
 					'confirmQuarantineAll'  => __( 'This quarantines all %s accounts awaiting review that match your current search, in batches, while this page stays open. Quarantine is reversible: no account is deleted and nothing is purged. Type QUARANTINE ALL to continue.', 'ew-user-cleaner' ),
 					'quarantineAllStop'     => __( 'Stop quarantining', 'ew-user-cleaner' ),

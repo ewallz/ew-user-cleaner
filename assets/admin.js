@@ -74,6 +74,104 @@
 			} );
 	}
 
+	/**
+	 * Bulk action progress bar.
+	 *
+	 * Batched actions know the total up front and report a remaining count per
+	 * request, so percentage is derived from work actually confirmed done
+	 * rather than from elapsed time.
+	 *
+	 * @param {string} name Value of the data-ewuc-progress attribute.
+	 * @return {Object} Progress controller.
+	 */
+	function progress( name ) {
+		var root = document.querySelector( '[data-ewuc-progress="' + name + '"]' );
+
+		function node( selector ) {
+			return root ? root.querySelector( selector ) : null;
+		}
+
+		return {
+			start: function ( total ) {
+				if ( ! root ) {
+					return;
+				}
+
+				root.hidden = false;
+				this.set( 0, total, data.i18n.progressStarting );
+			},
+			/**
+			 * @param {number} done  Rows processed so far.
+			 * @param {number} total Total rows in scope.
+			 * @param {string} note  Optional status text.
+			 */
+			set: function ( done, total, note ) {
+				if ( ! root ) {
+					return;
+				}
+
+				var percent = total > 0 ? Math.min( 100, Math.round( ( done / total ) * 100 ) ) : 0;
+				var bar = node( '[data-ewuc-progress-bar]' );
+				var meter = node( '.ewuc-progress' );
+				var label = node( '[data-ewuc-progress-percent]' );
+				var text = node( '[data-ewuc-progress-text]' );
+
+				if ( bar ) {
+					bar.style.width = percent + '%';
+				}
+
+				if ( meter ) {
+					meter.setAttribute( 'aria-valuenow', String( percent ) );
+				}
+
+				if ( label ) {
+					label.textContent = percent + '%';
+				}
+
+				if ( text ) {
+					text.textContent = note || data.i18n.progressCount
+						.replace( '%1$s', new Intl.NumberFormat().format( done ) )
+						.replace( '%2$s', new Intl.NumberFormat().format( total ) );
+				}
+			},
+			finish: function ( note ) {
+				if ( ! root ) {
+					return;
+				}
+
+				this.set( 1, 1, note || data.i18n.progressDone );
+			},
+			stop: function ( note ) {
+				var text = node( '[data-ewuc-progress-text]' );
+
+				if ( text && note ) {
+					text.textContent = note;
+				}
+			}
+		};
+	}
+
+	/**
+	 * Disables a button while a long action runs so it cannot be double fired.
+	 *
+	 * @param {HTMLElement} button  Button element.
+	 * @param {boolean}     busy    Whether the action is running.
+	 * @param {string}      label   Text to show while busy.
+	 * @return {string} The label that was replaced.
+	 */
+	function setBusy( button, busy, label ) {
+		var previous = button.textContent;
+
+		button.disabled = busy;
+		button.setAttribute( 'aria-busy', busy ? 'true' : 'false' );
+
+		if ( busy && label ) {
+			button.textContent = label;
+		}
+
+		return previous;
+	}
+
 	function selectedIds( form ) {
 		return Array.prototype.slice
 			.call( form.querySelectorAll( 'input[name="user_ids[]"]:checked' ) )
@@ -172,36 +270,71 @@
 			return;
 		}
 
-		// The server truncates to the configured batch size. Say so up front
-		// instead of silently dropping the tail of the selection.
+		// The server truncates each request to the configured batch size, so
+		// send the selection in bounded chunks instead of silently dropping
+		// its tail. Chunking also gives the reviewer real progress instead of
+		// a frozen button.
 		var limit = parseInt( data.batchQuarantine, 10 ) || 0;
+		var chunkSize = limit || ids.length;
+		var chunkSize = limit || ids.length;
+		var chunks = [];
 
-		if ( limit && ids.length > limit && ! window.confirm(
-			data.i18n.batchTruncated
-				.replace( '%1$s', ids.length )
-				.replace( '%2$s', limit )
-		) ) {
-			return;
+		for ( var index = 0; index < ids.length; index += chunkSize ) {
+			chunks.push( ids.slice( index, index + chunkSize ) );
 		}
 
-		request( '/quarantine', {
-			method: 'POST',
-			body: {
-				job_id: parseInt( form.dataset.job, 10 ) || 0,
-				user_ids: ids,
-				override: !! ( override && override.checked )
+		var meter = progress( 'quarantine' );
+		var totals = { quarantined: 0, skipped: 0 };
+		var processed = 0;
+		var busyLabel = setBusy( button, true, data.i18n.quarantineWorking );
+
+		meter.start( ids.length );
+
+		function report() {
+			message(
+				'[data-ewuc-bulk-message]',
+				data.i18n.quarantineProgress
+					.replace( '%1$s', totals.quarantined )
+					.replace( '%2$s', totals.skipped )
+			);
+		}
+
+		function step( position ) {
+			if ( position >= chunks.length ) {
+				meter.finish();
+				report();
+				window.setTimeout( function () {
+					window.location.reload();
+				}, 900 );
+				return;
 			}
-		} )
-			.then( function ( result ) {
-				message(
-					'[data-ewuc-bulk-message]',
-					'Quarantined ' + result.quarantined.length + ', skipped ' + result.skipped.length + '.'
-				);
-				window.location.reload();
+
+			request( '/quarantine', {
+				method: 'POST',
+				body: {
+					job_id: parseInt( form.dataset.job, 10 ) || 0,
+					user_ids: chunks[ position ],
+					override: !! ( override && override.checked )
+				}
 			} )
-			.catch( function ( error ) {
-				message( '[data-ewuc-bulk-message]', ( error && error.message ) || data.i18n.failed );
-			} );
+				.then( function ( result ) {
+					totals.quarantined += result.quarantined.length;
+					totals.skipped += result.skipped.length;
+					processed += chunks[ position ].length;
+
+					meter.set( processed, ids.length );
+					report();
+					step( position + 1 );
+				} )
+				.catch( function ( error ) {
+					setBusy( button, false );
+					button.textContent = busyLabel;
+					meter.stop( data.i18n.progressStopped );
+					message( '[data-ewuc-bulk-message]', ( error && error.message ) || data.i18n.failed );
+				} );
+		}
+
+		step( 0 );
 	} );
 
 	onClick( '[data-ewuc-dismiss]', function ( button ) {
@@ -252,19 +385,62 @@
 			return;
 		}
 
-		request( '/purge', { method: 'POST', body: { user_ids: ids, confirm: confirmation } } )
-			.then( function ( result ) {
-				message(
-					'[data-ewuc-quarantine-message]',
-					'Purged ' + result.purged.length + ', skipped ' + result.skipped.length + ', failed ' + result.failed.length + '.'
-				);
+		// Each request is capped at the configured purge batch size, so send
+		// the selection in bounded chunks and report progress between them.
+		var chunkSize = parseInt( data.batchPurge, 10 ) || ids.length;
+		var chunks = [];
+
+		for ( var index = 0; index < ids.length; index += chunkSize ) {
+			chunks.push( ids.slice( index, index + chunkSize ) );
+		}
+
+		var meter = progress( 'purge' );
+		var totals = { purged: 0, skipped: 0, failed: 0 };
+		var processed = 0;
+		var busyLabel = setBusy( button, true, data.i18n.purgeWorking );
+
+		meter.start( ids.length );
+
+		function report() {
+			message(
+				'[data-ewuc-quarantine-message]',
+				data.i18n.purgeProgress
+					.replace( '%1$s', totals.purged )
+					.replace( '%2$s', totals.skipped )
+					.replace( '%3$s', totals.failed )
+			);
+		}
+
+		function step( position ) {
+			if ( position >= chunks.length ) {
+				meter.finish();
+				report();
 				window.setTimeout( function () {
 					window.location.reload();
-				}, 1500 );
-			} )
-			.catch( function ( error ) {
-				message( '[data-ewuc-quarantine-message]', ( error && error.message ) || data.i18n.failed );
-			} );
+				}, 1200 );
+				return;
+			}
+
+			request( '/purge', { method: 'POST', body: { user_ids: chunks[ position ], confirm: confirmation } } )
+				.then( function ( result ) {
+					totals.purged += result.purged.length;
+					totals.skipped += result.skipped.length;
+					totals.failed += result.failed.length;
+					processed += chunks[ position ].length;
+
+					meter.set( processed, ids.length );
+					report();
+					step( position + 1 );
+				} )
+				.catch( function ( error ) {
+					setBusy( button, false );
+					button.textContent = busyLabel;
+					meter.stop( data.i18n.progressStopped );
+					message( '[data-ewuc-quarantine-message]', ( error && error.message ) || data.i18n.failed );
+				} );
+		}
+
+		step( 0 );
 	} );
 
 	// Purge every quarantined account, one bounded batch per request.
@@ -294,8 +470,15 @@
 
 		var totals = { purged: 0, skipped: 0, failed: 0 };
 		var cursor = 0;
+		var meter = progress( 'purge' );
+
+		meter.start( total );
 
 		function report( remaining ) {
+			// remaining is a live count of still-quarantined accounts, so this
+			// tracks work actually completed rather than requests sent.
+			meter.set( Math.max( 0, total - remaining ), total );
+
 			message(
 				'[data-ewuc-quarantine-message]',
 				data.i18n.purgeAllProgress
@@ -322,6 +505,13 @@
 
 					if ( result.done || ! purgeAllRunning ) {
 						purgeAllRunning = false;
+
+						if ( result.done ) {
+							meter.finish();
+						} else {
+							meter.stop( data.i18n.progressStopped );
+						}
+
 						window.setTimeout( function () {
 							window.location.reload();
 						}, 1200 );
@@ -333,6 +523,7 @@
 				.catch( function ( error ) {
 					purgeAllRunning = false;
 					button.textContent = data.i18n.purgeAllRetry;
+					meter.stop( data.i18n.progressStopped );
 					message( '[data-ewuc-quarantine-message]', ( error && error.message ) || data.i18n.failed );
 				} );
 		}
@@ -380,8 +571,15 @@
 
 		var totals = { quarantined: 0, skipped: 0 };
 		var cursor = 0;
+		var meter = progress( 'quarantine' );
+
+		meter.start( total );
 
 		function report( remaining ) {
+			// Percentage comes from rows the server confirmed it has passed,
+			// so a run that skips protected accounts still reaches 100%.
+			meter.set( Math.max( 0, total - remaining ), total );
+
 			message(
 				'[data-ewuc-bulk-message]',
 				data.i18n.quarantineAllProgress
@@ -415,6 +613,13 @@
 
 					if ( result.done || ! quarantineAllRunning ) {
 						quarantineAllRunning = false;
+
+						if ( result.done ) {
+							meter.finish();
+						} else {
+							meter.stop( data.i18n.progressStopped );
+						}
+
 						window.setTimeout( function () {
 							window.location.reload();
 						}, 1200 );
@@ -426,6 +631,7 @@
 				.catch( function ( error ) {
 					quarantineAllRunning = false;
 					button.textContent = label;
+					meter.stop( data.i18n.progressStopped );
 					message( '[data-ewuc-bulk-message]', ( error && error.message ) || data.i18n.failed );
 				} );
 		}

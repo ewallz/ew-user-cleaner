@@ -92,6 +92,32 @@
 	transition: width 200ms ease-in-out;
 }
 
+.ewuc-jobprogress {
+	background: var(--ewuc-surface);
+	border: 1px solid var(--ewuc-border);
+	border-radius: 6px;
+	margin-bottom: 12px;
+	padding: 12px;
+}
+
+.ewuc-jobprogress .ewuc-progress {
+	margin: 0 0 8px;
+}
+
+.ewuc-progress-label {
+	align-items: baseline;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin: 0;
+}
+
+.ewuc-progress-label strong {
+	font-size: 15px;
+	font-variant-numeric: tabular-nums;
+	min-width: 46px;
+}
+
 .ewuc-actions {
 	align-items: center;
 	display: flex;

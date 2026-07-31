@@ -4,7 +4,7 @@ Tags: spam users, spam registrations, user cleanup, delete users, bulk delete us
 Requires at least: 6.4
 Tested up to: 7.0
 Requires PHP: 8.0
-Stable tag: 1.3.1
+Stable tag: 1.4.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -143,6 +143,13 @@ They are heuristics based on local identity data, not a reputation service. That
 5. Quarantine tab with restore and purge actions.
 
 == Changelog ==
+
+= 1.4.0 =
+* Added: Percentage progress bar for quarantine and purge actions, including "Quarantine all" and "Purge all", so long runs show how much work is left.
+* Added: Search, email domain, sorting and rows-per-page filters on the Quarantine tab, making it practical to find a specific account to restore.
+* Added: Optional "Quarantined" column on the Users list screen, toggled per administrator from Screen Options.
+* Changed: Selecting more rows than the batch size now processes them in bounded chunks instead of warning and truncating.
+* Removed: Status dropdown on the Candidates tab. That list is a snapshot of one scan and cannot represent current account status, so it always shows rows awaiting review.
 
 = 1.3.1 =
 * Changed: Patch release for validating manual GitHub update notifications from version 1.3.0.
