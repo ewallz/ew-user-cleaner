@@ -208,9 +208,11 @@ Update all three, add a `readme.txt` changelog entry, then:
 ```powershell
 git add -A
 git commit -m "Release 1.3.0"
-git tag v1.3.0
+git tag -a v1.3.0 -m "Release 1.3.0"
 git push --follow-tags
 ```
+
+The tag must be annotated (`-a`). `--follow-tags` pushes annotated tags only, so a lightweight `git tag v1.3.0` is skipped silently: the branch pushes, no tag reaches the remote, and no release runs. Verify with `git ls-remote --tags origin | Select-String "v1.3.0"`.
 
 Pushing the tag triggers `.github/workflows/release.yml`, which verifies the versions, builds `ew-user-cleaner-<version>.zip`, checks the archive structure, and publishes a GitHub Release with the zip attached. A version mismatch fails the run before anything is published.
 
